@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{% endblock %} | УГМС Мониторинг</title>
+    <script src="/static/js/plotly.min.js" charset="utf-8"></script>
+    <script src="/static/js/zoom.js" charset="utf-8"></script>
+    <style>
+        @font-face {
+            font-family: "Roboto";
+            src: url("/static/fonts/Roboto-VF.ttf") format("truetype-variations");
+            font-weight: 200 800;
+            font-style: normal;
+            font-display: swap;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg:#f2f5f9; --panel:#ffffff; --border:rgba(15,23,42,.10);
+            --text:#0f172a; --muted:#64748b; --accent:#0284c7; --radius:14px;
+            --chart-h:240px; --shadow:0 8px 24px rgba(15,23,42,.08);
+        }
+        body { font-family:Roboto,'Segoe UI',sans-serif; color:var(--text);
+            background:
+                radial-gradient(1200px 600px at 85% -10%, rgba(2,132,199,.10), transparent 60%),
+                radial-gradient(900px 500px at -10% 20%, rgba(124,58,237,.08), transparent 60%),
+                var(--bg);
+            min-height:100vh; display:flex; flex-direction:column; }
+        .navbar { position:sticky; top:0; z-index:50; backdrop-filter:blur(14px);
+            background:rgba(255,255,255,.88); border-bottom:1px solid var(--border); }
+        .navbar .inner { max-width:1680px; margin:0 auto; padding:10px 12px;
+            display:flex; align-items:center; gap:12px; }
+        .brand { display:flex; align-items:center; gap:10px; text-decoration:none; color:inherit; }
+        .logo-box { width:40px; height:40px; flex:0 0 40px; border-radius:10px; overflow:hidden;
+            background:#ffffff; border:1px solid var(--border);
+            display:grid; place-items:center; box-shadow:0 4px 14px rgba(15,23,42,.08); }
+        .logo-box img { width:100%; height:100%; object-fit:contain; display:block; }
+        .logo-fallback { display:none; place-items:center; width:100%; height:100%;
+            font-size:9px; font-weight:800; letter-spacing:.3px; color:var(--accent); }
+        .logo-text { font-weight:800; letter-spacing:.4px; font-size:15px; white-space:nowrap; }
+        .page { flex:1; width:100%; max-width:1680px; margin:0 auto; padding:12px 10px 24px; }
+        .card { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+            box-shadow:var(--shadow); }
+
+        .dash-head { padding:16px 20px 14px; margin-bottom:14px; }
+        .head-row { display:flex; flex-wrap:wrap; align-items:center; gap:14px; margin-bottom:12px; }
+        .dash-head h1 { font-size:38px; font-weight:800; letter-spacing:.5px; line-height:1.1; }
+        .badge { margin-left:auto; display:inline-flex; align-items:center; gap:7px; background:#f8fafc;
+            border:1px solid var(--border); padding:7px 14px; border-radius:999px; color:var(--muted); font-size:12px; }
+        .badge .pulse { width:7px; height:7px; border-radius:50%; background:#16a34a;
+            box-shadow:0 0 0 0 rgba(22,163,74,.5); animation:pulse 2s infinite; }
+        .badge.off { color:#dc2626; border-color:rgba(220,38,38,.35); background:rgba(220,38,38,.06); }
+        .badge.off .pulse { background:#dc2626; animation:none; }
+        @keyframes pulse { 70%{box-shadow:0 0 0 8px rgba(22,163,74,0);} 100%{box-shadow:0 0 0 0 rgba(22,163,74,0);} }
+        .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+        .kpi { background:#f8fafc; border:1px solid var(--border); border-radius:12px; padding:10px 12px; }
+        .kpi .top { display:flex; align-items:center; gap:6px; color:var(--muted);
+            font-size:10px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; }
+        .kpi .icon { width:22px; height:22px; border-radius:7px; display:grid; place-items:center;
+            font-size:9px; font-weight:800; border:1px solid; flex:0 0 auto; }
+        .icon.blue{background:rgba(2,132,199,.10);border-color:rgba(2,132,199,.30);color:#0369a1}
+        .icon.yellow{background:rgba(202,138,4,.10);border-color:rgba(202,138,4,.30);color:#a16207}
+        .icon.violet{background:rgba(124,58,237,.10);border-color:rgba(124,58,237,.30);color:#6d28d9}
+        .icon.orange{background:rgba(234,88,12,.10);border-color:rgba(234,88,12,.30);color:#c2410c}
+        .icon.green{background:rgba(5,150,105,.10);border-color:rgba(5,150,105,.30);color:#047857}
+        .icon.cyan{background:rgba(8,145,178,.10);border-color:rgba(8,145,178,.30);color:#0e7490}
+        .icon.red{background:rgba(220,38,38,.10);border-color:rgba(220,38,38,.30);color:#b91c1c}
+        .icon.compass{background:rgba(6,182,212,.10);border-color:rgba(6,182,212,.30);color:#0e7490}
+        .kpi .value { margin-top:6px; font-size:28px; line-height:1.05; font-weight:800; font-variant-numeric:tabular-nums; }
+        .kpi .value small { font-size:13px; color:var(--muted); font-weight:600; margin-left:2px; }
+        .kpi .sub { margin-top:3px; color:var(--muted); font-size:11px; line-height:1.25;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+        /* ===== Три колонки ===== */
+        .layout-3col { display:grid; grid-template-columns:230px minmax(0,1fr) 130px; gap:14px; align-items:start; }
+        .side-left { display:flex; flex-direction:column; gap:12px; }
+        .photo-frame { aspect-ratio:4/3; border:1px dashed var(--border); border-radius:12px;
+            background:#f8fafc; display:grid; place-items:center;
+            color:var(--muted); font-size:12px; letter-spacing:.4px; }
+        .side-right { display:flex; flex-direction:column; align-items:center; gap:10px; }
+        .traffic { display:flex; flex-direction:column-reverse; gap:12px;
+            padding:16px 12px; background:#f8fafc; border:1px solid var(--border); border-radius:999px; }
+        .t-light { width:46px; height:46px; border-radius:50%; position:relative;
+            background:rgba(15,23,42,.06); border:1px solid var(--border);
+            display:grid; place-items:center; transition:background .25s, box-shadow .25s, border-color .25s; }
+        .t-num { font-size:16px; font-weight:800; line-height:1; color:var(--muted);
+            font-variant-numeric:tabular-nums; transition:color .25s; pointer-events:none; }
+        .t-light.on .t-num { color:#ffffff; }
+        .traffic-caption { color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; text-align:center; }
+                /* ===== Плашка тревоги (уровни 4 и 5) ===== */
+        .alert-banner { display:none; align-items:center; gap:10px; padding:12px 18px;
+            margin-bottom:14px; border-radius:12px; border:1px solid transparent;
+            font-size:14px; font-weight:700; letter-spacing:.3px; animation:alertPulse 2s ease-in-out infinite; }
+        .alert-banner.visible { display:flex; }
+        .alert-banner .alert-icon { font-size:20px; flex:0 0 auto; }
+        .alert-banner .alert-text { flex:1; }
+        .alert-banner .alert-level { font-size:12px; opacity:.8; white-space:nowrap; }
+        .alert-banner.level-4 { background:rgba(234,88,12,.10); border-color:rgba(234,88,12,.40); color:#c2410c; }
+        .alert-banner.level-5 { background:rgba(220,38,38,.12); border-color:rgba(220,38,38,.45); color:#b91c1c; }
+        @keyframes alertPulse { 0%,100%{opacity:1} 50%{opacity:.7} }
+
+        /* ===== Центр: графики в два ряда ===== */
+        .charts-grid { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; }
+        .chart-card { padding:10px 10px 8px; }
+        .chart-card .head { display:flex; align-items:center; gap:6px; margin-bottom:6px; min-height:20px; }
+        .chart-card h3 { font-size:13px; font-weight:700; line-height:1.15;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .expand-btn { margin-left:auto; width:22px; height:22px; border-radius:6px;
+            border:1px solid var(--border); background:#f8fafc; color:var(--muted);
+            cursor:pointer; font-size:12px; line-height:1; display:grid; place-items:center;
+            transition:.15s; flex:0 0 auto; }
+        .expand-btn:hover { color:var(--accent); border-color:var(--accent); background:rgba(2,132,199,.08); }
+        .plot-frame { width:100%; height:var(--chart-h); position:relative; overflow:hidden; border-radius:8px; }
+        .plot-frame > div { width:100%; height:100%; cursor:pointer; }
+
+        /* ===== Заглушка «Нет данных» внутри блока ===== */
+        .ph { position:absolute; inset:0; display:none; place-items:center;
+            color:var(--muted); font-size:12px; font-weight:600; letter-spacing:.4px;
+            border:1px dashed var(--border); border-radius:8px; background:rgba(248,250,252,.7); }
+        .plot-frame.empty .ph, .modal-frame.empty .ph { display:grid; }
+        .plot-frame.empty > div.js-plotly-plot { visibility:hidden; }
+
+        /* ===== Модалка ===== */
+        .modal { position:fixed; inset:0; z-index:1000; display:none; align-items:center; justify-content:center; padding:18px; }
+        .modal.open { display:flex; }
+        .modal-backdrop { position:absolute; inset:0; background:rgba(15,23,42,.45); backdrop-filter:blur(4px); }
+        .modal-card { position:relative; width:min(1100px,96vw); max-height:92vh; overflow:auto;
+            background:#ffffff; border:1px solid var(--border); border-radius:16px;
+            box-shadow:0 30px 80px rgba(15,23,42,.25); padding:14px 16px 16px; }
+        .modal-card .mhead { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+        .modal-card .mhead h3 { font-size:15px; font-weight:700; }
+        .modal-close { margin-left:auto; width:30px; height:30px; border-radius:8px;
+            border:1px solid var(--border); background:#f8fafc; color:var(--muted);
+            cursor:pointer; font-size:16px; line-height:1; display:grid; place-items:center; transition:.15s; }
+        .modal-close:hover { color:#fff; border-color:#dc2626; background:#dc2626; }
+        .modal-frame { position:relative; width:100%; min-height:520px; }
+        #modal-plot { width:100%; min-height:520px; }
+        #modal-table { margin-top:12px; border:1px solid var(--border); border-radius:10px;
+            overflow:auto; max-height:min(40vh,380px); overscroll-behavior:contain; background:#ffffff; }
+        #modal-table table { width:100%; border-collapse:collapse; font-size:13px;
+            font-variant-numeric:tabular-nums; min-width:520px; }
+        #modal-table thead th { position:sticky; top:0; z-index:1; color:var(--muted);
+            text-transform:uppercase; font-size:10px; letter-spacing:.5px; text-align:right;
+            padding:8px 12px; background:#f1f5f9; border-bottom:1px solid var(--border); white-space:nowrap; }
+        #modal-table thead th:first-child { text-align:left; }
+        #modal-table tbody td { padding:6px 12px; border-bottom:1px solid rgba(15,23,42,.06);
+            text-align:right; white-space:nowrap; }
+        #modal-table tbody td:first-child { text-align:left; color:var(--muted); }
+        #modal-table tbody tr:last-child td { border-bottom:none; }
+        #modal-table tbody tr:hover td { background:rgba(2,132,199,.06); }
+        #modal-table .loading { padding:18px; text-align:center; color:var(--muted); font-size:13px; }
+
+        .footer { border-top:1px solid var(--border); color:var(--muted); font-size:12px;
+            padding:12px 0; background:#ffffff; }
+        .footer .inner { max-width:1680px; margin:0 auto; padding:0 12px; display:flex; gap:8px;
+            flex-wrap:wrap; justify-content:space-between; }
+
+        @media (max-width:1100px){
+            .layout-3col { grid-template-columns:1fr; }
+            .side-left { flex-direction:row; }
+            .photo-frame { flex:1 1 0; aspect-ratio:16/9; }
+            .side-right { flex-direction:row; justify-content:center; }
+            .traffic { flex-direction:row; border-radius:999px; }
+            .charts-grid { grid-template-columns:repeat(2, minmax(0,1fr)); }
+        }
+        @media (max-width:640px){
+            .dash-head h1 { font-size:26px; }
+            .charts-grid { grid-template-columns:1fr; }
+            .side-left { flex-wrap:wrap; }
+            .photo-frame { flex:1 1 40%; }
+        }
+    </style>
+</head>
+<body>
+    <header class="navbar">
+        <div class="inner">
+            <a href="/" class="brand">
+                <span class="logo-box">
+                    <img src="/static/img/logo.png"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
+                </span>
+                <span class="logo-text">ФГБУ Северо-Кавказское УГМС</span>
+            </a>
+        </div>
+    </header>
+    <div id="alert-banner" class="alert-banner" role="alert">
+    <span class="alert-icon">⚠</span>
+    <span class="alert-text" id="alert-text">Повышенный уровень тревоги</span>
+    <span class="alert-level" id="alert-level"></span>
+</div>
+
+    <main class="page">{% block body %}{% endblock %}</main>
+
+
+    <div id="chart-modal" class="modal" aria-hidden="true">
+        <div class="modal-backdrop" data-close></div>
+        <div class="modal-card" role="dialog" aria-modal="true">
+            <div class="mhead">
+                <h3 id="modal-title">График</h3>
+                <button class="modal-close" data-close title="Закрыть">×</button>
+            </div>
+            <div class="modal-frame" id="modal-frame">
+                <div id="modal-plot"></div>
+                <div class="ph">Нет данных</div>
+            </div>
+            <div id="modal-table"></div>
+        </div>
+    </div>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

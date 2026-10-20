@@ -1,0 +1,330 @@
+services:
+
+  # -----------------------------------------------------------------------
+  # Пользовательская страница
+  # -----------------------------------------------------------------------
+
+  viewer:
+    image: kolka-glacier-telemetry/viewer:1.0
+
+    build: 
+      context: ./viewer
+      dockerfile: Dockerfile
+      network: host
+
+    depends_on:
+      interface:
+        condition: service_healthy
+
+    env_file:
+      - .env
+
+    environment:
+      TZ: ${TIME_ZONE}
+
+    ports:
+      - "${VIEWER_DASHBOARD_HOST_PORT}:${VIEWER_DASHBOARD_CONTAINER_PORT}"
+
+    networks:
+      - internal
+
+    restart: unless-stopped
+
+
+  # -----------------------------------------------------------------------
+  # Программный интерфейс для доступа к накопленым данным телеметрии
+  # -----------------------------------------------------------------------
+
+  interface:
+    image: kolka-glacier-telemetry/interface:1.0
+
+    build: 
+      context: ./interface
+      dockerfile: Dockerfile
+      network: host
+
+    depends_on:
+      database:
+        condition: service_healthy
+
+      object-storage:
+        condition: service_healthy
+
+    env_file:
+      - .env
+
+    environment:
+      TZ: ${TIME_ZONE}
+
+    volumes:
+      - ./interface/data/artifacts/logs:/logs
+
+    ports:
+      - "${INTERFACE_HOST_PORT}:${INTERFACE_CONTAINER_PORT}"
+
+    networks:
+      - internal
+
+    restart: unless-stopped
+
+    healthcheck:
+
+      test: [
+        "CMD", "python", "-c",
+        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${INTERFACE_CONTAINER_PORT}/api/v1/health/', timeout=5)"
+      ]
+
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    labels:
+
+      # Общие настройки маршрутизации
+      - "traefik.enable=true"
+
+      # Маршрут программного интерфейса
+      - "traefik.http.routers.interface.telemetry.rule=Host(`${INTERFACE_DOMAIN}`)"
+      - "traefik.http.routers.interface.telemetry.entrypoints=web"
+      - "traefik.http.routers.interface.telemetry.service=interface.telemetry"
+
+      # Сервис программного интерфейса
+      - "traefik.http.services.interface.telemetry.loadbalancer.server.port=${INTERFACE_CONTAINER_PORT}"
+
+
+  # -----------------------------------------------------------------------
+  # Служба обработки данных
+  # -----------------------------------------------------------------------
+
+  ingestor:
+    image: kolka-glacier-telemetry/ingestor:1.0
+
+    build: 
+      context: ./ingestor
+      dockerfile: Dockerfile
+      network: host
+
+    depends_on:
+      interface:
+        condition: service_healthy
+
+    env_file:
+      - .env
+
+    environment:
+      TZ: ${TIME_ZONE}
+
+    volumes:
+      - ./ingestor/data/artifacts/logs:/logs
+
+    networks:
+      - internal
+
+    restart: unless-stopped
+
+
+  # -----------------------------------------------------------------------
+  # Менеджер базы данных (pgAdmin)
+  # -----------------------------------------------------------------------
+
+  database-manager:
+    image: dpage/pgadmin4:9.17
+
+    depends_on:
+
+      database:
+        condition: service_healthy
+
+    # Профиль разработчика: образ запускается только при явной передаче параметра профиля
+    profiles:
+      - dev
+
+    environment:
+
+      # Часовой пояс
+      TZ: ${TIME_ZONE}
+
+      # Отключение многопользовательского режима
+      # Позволяет работать без создания отдельных учётных записей
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+
+      # Отключение требования мастер-пароля
+      # Интерфейс открывается без предварительного ввода пароля
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+
+      # Отключение усиленной защиты cookies
+      # Упрощает автоматический вход в закрытой сети
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: 'False'
+
+      # Учётные данные для входа в интерфейс
+      PGADMIN_DEFAULT_EMAIL: ${DATABASE_MANAGER_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${DATABASE_MANAGER_DEFAULT_PASSWORD}
+
+    volumes:
+
+      # Изменяемые данные
+      - ./database_manager/data/runtime:/var/lib/pgadmin
+
+      # Управляющие файлы (только чтение)
+      - ./database_manager/data/control/servers.json:/pgadmin4/servers.json:ro
+      - ./database_manager/data/control/pgpass:/pgadmin4/pgpass:ro
+
+    networks:
+      - internal
+
+    ports:
+      - "${DATABASE_MANAGER_DASHBOARD_HOST_PORT}:${DATABASE_MANAGER_DASHBOARD_CONTAINER_PORT}"
+
+    restart: unless-stopped
+
+    labels:
+
+      # Общие настройки маршрутизации
+      - "traefik.enable=true"
+
+      # Маршрут панели управления
+      - "traefik.http.routers.manager.database.telemetry.rule=Host(`${DATABASE_MANAGER_DASHBOARD_DOMAIN}`)"
+      - "traefik.http.routers.manager.database.telemetry.entrypoints=web"
+      - "traefik.http.routers.manager.database.telemetry.service=manager.database.telemetry"
+
+      # Сервис панели управления
+      - "traefik.http.services.manager.database.telemetry.loadbalancer.server.port=${DATABASE_MANAGER_DASHBOARD_CONTAINER_PORT}"
+
+
+  # -----------------------------------------------------------------------
+  # База данных (PostgreSQL)
+  # -----------------------------------------------------------------------
+
+  database:
+    image: postgres:17-alpine
+
+    environment:
+      TZ: ${TIME_ZONE}
+
+      POSTGRES_DB: ${DATABASE_DEFAULT_NAME}
+      POSTGRES_USER: ${DATABASE_DEFAULT_USER}
+      POSTGRES_PASSWORD: ${DATABASE_DEFAULT_PASSWORD}
+
+    volumes:
+
+      # Изменяемые данные
+      # - ./database/data/runtime:/var/lib/postgresql/data  # Хранение данных в директории хоста (bind mount)
+      - database-runtime:/var/lib/postgresql/data           # Хранение данных в именованном томе Docker (volume)
+
+      # Файлы первоначальной инициализации
+      # Скрипты и SQL-файлы в этом каталоге выполняются автоматически
+      # при первом запуске контейнера.
+      - ./database/data/bootstrap:/docker-entrypoint-initdb.d
+
+    networks:
+
+      # Внутренняя сеть проекта
+      # База данных доступна только для контейнеров внутри этой сети.
+      # Внешний доступ возможен только через проброшенные порты ниже.
+      - internal
+
+    ports:
+
+      # Порт базы данных для внешнего доступа
+      #
+      # Подключение выполняется по IP-адресу сервера и опубликованному порту.
+      # Такой способ не требует настройки дополнительной TCP-маршрутизации
+      # и обычно проще в эксплуатации, чем использование доменных имён
+      # для PostgreSQL.
+      #
+      # Если порт должен быть доступен только на сервере:
+      # - "127.0.0.1:${DATABASE_INTERFACE_HOST_PORT}:${DATABASE_INTERFACE_CONTAINER_PORT}"
+      #
+      # Для доступа из локальной сети:
+      - "${DATABASE_INTERFACE_HOST_PORT}:${DATABASE_INTERFACE_CONTAINER_PORT}"
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_DEFAULT_USER} -d ${DATABASE_DEFAULT_NAME}"]
+
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+
+  # -----------------------------------------------------------------------
+  # Объектное хранилище (MinIO)
+  # -----------------------------------------------------------------------
+
+  object-storage:
+    image: pgsty/silo:RELEASE.2026-10-18T00-00-00Z
+
+    environment:
+      TZ: ${TIME_ZONE}
+
+      MINIO_ROOT_USER: ${OBJECT_STORAGE_DEFAULT_USER}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_DEFAULT_PASSWORD}
+
+    command: >
+      server /data
+      --console-address ":9001"
+
+    volumes:
+      # - ./object_storage/data/runtime:/data  # Хранение данных в директории хоста (bind mount)
+      - object-storage-runtime:/data           # Хранение данных в именованном томе Docker (volume)
+
+    ports:
+      - "${OBJECT_STORAGE_DASHBOARD_HOST_PORT}:${OBJECT_STORAGE_DASHBOARD_CONTAINER_PORT}"
+      - "${OBJECT_STORAGE_INTERFACE_HOST_PORT}:${OBJECT_STORAGE_INTERFACE_CONTAINER_PORT}"
+
+    networks:
+      - internal
+
+    restart: unless-stopped
+
+    healthcheck:
+
+      test: [
+        "CMD",
+        "curl", "-f", "http://localhost:${OBJECT_STORAGE_INTERFACE_CONTAINER_PORT}/minio/health/live"
+      ]
+
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    labels:
+
+      # Общие настройки маршрутизации
+      - "traefik.enable=true"
+
+      # Маршрут панели управления
+      - "traefik.http.routers.storage.kolka.rule=Host(`${OBJECT_STORAGE_DASHBOARD_DOMAIN}`)"
+      - "traefik.http.routers.storage.kolka.entrypoints=web"
+      - "traefik.http.routers.storage.kolka.service=storage.kolka"
+
+      # Маршрут программного интерфейса
+      - "traefik.http.routers.interface.storage.kolka.rule=Host(`${OBJECT_STORAGE_INTERFACE_DOMAIN}`)"
+      - "traefik.http.routers.interface.storage.kolka.entrypoints=web"
+      - "traefik.http.routers.interface.storage.kolka.service=interface.storage.kolka"
+
+      # Сервис панели управления
+      - "traefik.http.services.storage.kolka.loadbalancer.server.port=${OBJECT_STORAGE_DASHBOARD_CONTAINER_PORT}"
+
+      # Сервис программного интерфейса
+      - "traefik.http.services.interface.storage.kolka.loadbalancer.server.port=${OBJECT_STORAGE_INTERFACE_CONTAINER_PORT}"
+
+
+networks:
+
+  # Внутренняя сеть для связи между сервисами проекта
+  internal:
+    driver: bridge
+
+  # Внешняя сеть для маршрутизации через Traefik
+  proxy:
+    external: true
+
+
+volumes:
+
+  database-runtime:
+  object-storage-runtime:

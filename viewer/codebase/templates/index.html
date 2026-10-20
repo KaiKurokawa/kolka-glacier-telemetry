@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Дашборд станции{% endblock %}
+
+{% block body %}
+<!-- Шапка: крупный заголовок + актуальные последние показатели -->
+<header class="dash-head card">
+    <div class="head-row">
+        <h1 id="station-title">АМС Комлексного мониторинга Ледника Колка</h1>
+        <span class="badge" id="status-badge"><span class="pulse"></span> <span id="updated-badge">Загрузка…</span></span>
+    </div>
+    <div id="kpi-grid" class="kpis"></div>
+</header>
+
+<!-- Дашборд виден ВСЕГДА; при отсутствии данных каждый блок показывает свою заглушку -->
+<div id="dashboard">
+    <div class="layout-3col">
+
+        <!-- Левая колонка: 4 заглушки под фото -->
+        <aside class="side-left">
+            <div class="photo-frame" data-slot="1"><span>Нет данных</span></div>
+            <div class="photo-frame" data-slot="2"><span>Нет данных</span></div>
+            <div class="photo-frame" data-slot="3"><span>Нет данных</span></div>
+            <div class="photo-frame" data-slot="4"><span>Нет данных</span></div>
+        </aside>
+
+        <!-- Центр: графики в два ряда -->
+        <section class="center-col">
+            <div class="charts-grid">
+                <div class="card chart-card">
+                    <div class="head"><span class="icon blue">°C</span><h3>Температура</h3><button class="expand-btn" data-expand="temperature" title="Развернуть за год">⤢</button></div>
+                    <div class="plot-frame empty" id="frame_temperature"><div id="plot_temperature"></div><div class="ph">Нет данных</div></div>
+                </div>
+                <div class="card chart-card">
+                    <div class="head"><span class="icon orange">%</span><h3>Влажность</h3><button class="expand-btn" data-expand="humidity" title="Развернуть за год">⤢</button></div>
+                    <div class="plot-frame empty" id="frame_humidity"><div id="plot_humidity"></div><div class="ph">Нет данных</div></div>
+                </div>
+                <div class="card chart-card">
+                    <div class="head"><span class="icon violet">гПа</span><h3>Давление</h3><button class="expand-btn" data-expand="pressure" title="Развернуть за год">⤢</button></div>
+                    <div class="plot-frame empty" id="frame_pressure"><div id="plot_pressure"></div><div class="ph">Нет данных</div></div>
+                </div>
+                <div class="card chart-card">
+                    <div class="head"><span class="icon yellow">м/с</span><h3>Ветер</h3><button class="expand-btn" data-expand="wind" title="Развернуть за год">⤢</button></div>
+                    <div class="plot-frame empty" id="frame_wind"><div id="plot_wind"></div><div class="ph">Нет данных</div></div>
+                </div>
+                <div class="card chart-card">
+                    <div class="head"><span class="icon compass">Н</span><h3>Направление ветра</h3><button class="expand-btn" data-expand="wind_direction" title="Развернуть за год">⤢</button></div>
+                    <div class="plot-frame empty" id="frame_wind_direction"><div id="plot_wind_direction"></div><div class="ph">Нет данных</div></div>
+                </div>
+                <div class="card chart-card">
+                    <div class="head"><span class="icon green">мм</span><h3>Осадки</h3><button class="expand-btn" data-expand="precipitation" title="Развернуть за год">⤢</button></div>
+                    <div class="plot-frame empty" id="frame_precipitation"><div id="plot_precipitation"></div><div class="ph">Нет данных</div></div>
+                </div>
+                <div class="card chart-card">
+                    <div class="head"><span class="icon cyan">см</span><h3>Снег</h3><button class="expand-btn" data-expand="snow" title="Развернуть за год">⤢</button></div>
+                    <div class="plot-frame empty" id="frame_snow"><div id="plot_snow"></div><div class="ph">Нет данных</div></div>
+                </div>
+                <div class="card chart-card">
+                    <div class="head"><span class="icon red">V</span><h3>Батарея</h3><button class="expand-btn" data-expand="battery" title="Развернуть за год">⤢</button></div>
+                    <div class="plot-frame empty" id="frame_battery"><div id="plot_battery"></div><div class="ph">Нет данных</div></div>
+                </div>
+            </div>
+        </section>
+
+        <aside class="side-right">
+            <div class="traffic" id="traffic-light">
+                <div class="t-light" data-level="1"><span class="t-num">1</span></div>
+                <div class="t-light" data-level="2"><span class="t-num">2</span></div>
+                <div class="t-light" data-level="3"><span class="t-num">3</span></div>
+                <div class="t-light" data-level="4"><span class="t-num">4</span></div>
+                <div class="t-light" data-level="5"><span class="t-num">5</span></div>
+            </div>
+            <div class="traffic-caption" id="traffic-value">Критерии опасного сходка Ледника Колка</div>
+        </aside>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/data.js" charset="utf-8"></script>
+{% endblock %}

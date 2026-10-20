@@ -1,0 +1,17 @@
+# Список образов для офлайн-переноса
+# Формат: <image>:<tag>, по одному в строке
+# Пустые строки и строки с # игнорируются
+
+# --- Публичные образы из реестров ---
+postgres:17-alpine
+pgsty/silo:RELEASE.2026-10-18T00-00-00Z
+dpage/pgadmin4:9.17
+python:3.14-alpine
+python:3.14-slim
+
+# --- Кастомные образы проекта (собираются локально) ---
+# Их нужно собрать на исходной машине ДО запуска save.sh:
+#   docker compose build interface ingestor
+kolka-glacier-telemetry/interface:1.0
+kolka-glacier-telemetry/ingestor:1.0
+kolka-glacier-telemetry/viewer:1.0
